@@ -2,12 +2,13 @@ import dynamic from "next/dynamic";
 import p5Types from "p5";
 import { MutableRefObject } from "react";
 import { Hand } from "@tensorflow-models/hand-pose-detection";
-import { getSmoothedHandpose } from "../lib/getSmoothedHandpose";
-import { updateHandposeHistory } from "../lib/updateHandposeHistory";
 import { Keypoint } from "@tensorflow-models/hand-pose-detection";
 import { convertHandToHandpose } from "../lib/converter/convertHandToHandpose";
 import { isValidTriangle } from "../lib/isValidTriangle";
 import { getPentagonCorner } from "../lib/getPentagonCorner";
+import { getSmoothedValue } from "../lib/calculator/getSmoothedValue";
+import { getSmoothedHandpose } from "../lib/getSmoothedHandpose";
+import { updateHandposeHistory } from "../lib/updateHandposeHistory";
 
 type Props = {
   handpose: MutableRefObject<Hand[]>;
@@ -25,8 +26,9 @@ export const HandSketch = ({ handpose }: Props) => {
     left: Handpose[];
     right: Handpose[];
   } = { left: [], right: [] };
-
-  let distanceList = [0, 0, 0, 0, 0];
+  let leftDistanceListHistory: number[][] = [];
+  let leftDistanceList = [0, 0, 0, 0, 0];
+  let leftDistanceListRaw = [0, 0, 0, 0, 0];
   let cornerList = [0, 0, 0, 0, 0];
   const fingerNames = [
     "thumb",
@@ -35,6 +37,10 @@ export const HandSketch = ({ handpose }: Props) => {
     "ring finger",
     "pinky",
   ];
+  let L1: number = 0;
+  let L2: number = 0;
+
+  let distanceListHistory: number[][] = [];
 
   const preload = (p5: p5Types) => {
     // 画像などのロードを行う
@@ -45,7 +51,7 @@ export const HandSketch = ({ handpose }: Props) => {
     p5.stroke(220);
     p5.fill(255);
     p5.strokeWeight(10);
-    p5.textSize(25);
+    p5.textSize(15);
   };
 
   const draw = (p5: p5Types) => {
@@ -53,11 +59,8 @@ export const HandSketch = ({ handpose }: Props) => {
       left: Handpose;
       right: Handpose;
     } = convertHandToHandpose(handpose.current); //平滑化されていない手指の動きを使用する
-    handposeHistory = updateHandposeHistory(rawHands, handposeHistory); //handposeHistoryの更新
-    const hands: {
-      left: Handpose;
-      right: Handpose;
-    } = getSmoothedHandpose(rawHands, handposeHistory); //平滑化された手指の動きを取得する
+    updateHandposeHistory(rawHands, handposeHistory);
+    const hands = getSmoothedHandpose(rawHands, handposeHistory);
 
     p5.background(1, 25, 96);
 
@@ -71,7 +74,7 @@ export const HandSketch = ({ handpose }: Props) => {
     // if one hand is detected, both side of organ is shrink / extend.
     // if two hands are detected, each side of organ changes according to each hand.
     const r = 200; // <の長さ.
-    const scale = 3; // 指先と付け根の距離の入力値に対する、出力時に使うスケール比。
+    const scale = 2; // 指先と付け根の距離の入力値に対する、出力時に使うスケール比。
     let start: number = 0;
     let end: number = 0;
 
@@ -86,40 +89,80 @@ export const HandSketch = ({ handpose }: Props) => {
 
       p5.translate(window.innerWidth / 2, window.innerHeight / 2);
 
-      const tmpDistanceList = [];
+      // p5.fill(220);
+      // p5.ellipse(0, 0, 80);
+
+      const tmpLeftDistanceList = [];
       for (let n = 0; n < 5; n++) {
         start = 4 * n + 1;
         end = 4 * n + 4;
-        let d = (hands.left[start].y - hands.left[end].y) * scale;
+        let d =
+          Math.sqrt(
+            (hands.left[start].x - hands.left[end].x) ** 2 +
+              (hands.left[start].y - hands.left[end].y) ** 2
+          ) * scale;
         if (r < d) {
           d = r;
         } else if (d < 0) {
           d = 10; //三角形として体をなすように. calcTriangleCornerでのzero division error回避
         }
 
-        tmpDistanceList.push(d);
+        tmpLeftDistanceList.push(d);
       }
 
       //validate
       const l1 =
-        Math.max(tmpDistanceList[0], tmpDistanceList[1]) +
-        Math.min(tmpDistanceList[0], tmpDistanceList[1]) / 2;
+        Math.max(tmpLeftDistanceList[0], tmpLeftDistanceList[1]) +
+        Math.min(tmpLeftDistanceList[0], tmpLeftDistanceList[1]) / 2;
       const l2 =
-        Math.max(tmpDistanceList[3], tmpDistanceList[4]) +
-        Math.min(tmpDistanceList[3], tmpDistanceList[4]) / 2;
+        Math.max(tmpLeftDistanceList[3], tmpLeftDistanceList[4]) +
+        Math.min(tmpLeftDistanceList[3], tmpLeftDistanceList[4]) / 2;
 
-      const edgeList = [l1, l2, tmpDistanceList[2]];
+      const edgeList = [l1, l2, tmpLeftDistanceList[2]];
 
       if (isValidTriangle(edgeList)) {
-        cornerList = getPentagonCorner({
-          distanceList,
-          l1,
-          l2,
-        });
-        distanceList = tmpDistanceList;
+        leftDistanceListRaw = tmpLeftDistanceList;
       }
+      //update leftDistanceListHistory:
+      leftDistanceListHistory.push(leftDistanceListRaw);
+      if (leftDistanceListHistory.length > 5) {
+        leftDistanceListHistory.shift();
+      }
+
+      leftDistanceList = getSmoothedValue(leftDistanceListHistory, 5);
+      distanceListHistory.push(leftDistanceList);
+      if (distanceListHistory.length > 300) {
+        console.log(JSON.stringify(distanceListHistory));
+        distanceListHistory = [];
+      }
+
+      L1 =
+        Math.max(leftDistanceList[0], leftDistanceList[1]) +
+        Math.min(leftDistanceList[0], leftDistanceList[1]) / 2;
+      L2 =
+        Math.max(leftDistanceList[3], leftDistanceList[4]) +
+        Math.min(leftDistanceList[3], leftDistanceList[4]) / 2;
+
+      cornerList = getPentagonCorner({
+        distanceList: leftDistanceList,
+        l1: L1,
+        l2: L2,
+      });
+      p5.push();
+      p5.noStroke();
+      p5.translate(-p5.width / 2 + 10, -p5.height / 2 + 10);
+      for (let i = 0; i < leftDistanceList.length; i++) {
+        p5.translate(0, 20);
+        p5.text(leftDistanceList[i], 0, 0);
+        p5.push();
+        p5.translate(200, 0);
+        p5.text(cornerList[i], 0, 0);
+        p5.pop();
+      }
+      p5.pop();
+
       for (let i = 0; i < 5; i++) {
-        const d = distanceList[i];
+        const d = leftDistanceList[i];
         const sign = -1; //正負の符号
         p5.line(0, 0, (sign * Math.sqrt(r ** 2 - d ** 2)) / 2, -d / 2);
         p5.line((sign * Math.sqrt(r ** 2 - d ** 2)) / 2, -d / 2, 0, -d);
