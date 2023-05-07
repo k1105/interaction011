@@ -28,7 +28,6 @@ export const HandSketch = ({ handpose }: Props) => {
   } = { left: [], right: [] };
   let leftDistanceListHistory: number[][] = [];
   let leftDistanceList = [0, 0, 0, 0, 0];
-  let leftDistanceListRaw = [0, 0, 0, 0, 0];
   let cornerList = [0, 0, 0, 0, 0];
   const fingerNames = [
     "thumb",
@@ -37,8 +36,8 @@ export const HandSketch = ({ handpose }: Props) => {
     "ring finger",
     "pinky",
   ];
-  let L1: number = 0;
-  let L2: number = 0;
+  let l1: number = 0;
+  let l2: number = 0;
 
   let distanceListHistory: number[][] = [];
 
@@ -92,7 +91,7 @@ export const HandSketch = ({ handpose }: Props) => {
       // p5.fill(220);
       // p5.ellipse(0, 0, 80);
 
-      const tmpLeftDistanceList = [];
+      const leftDistanceListRaw = [];
       for (let n = 0; n < 5; n++) {
         start = 4 * n + 1;
         end = 4 * n + 4;
@@ -103,26 +102,10 @@ export const HandSketch = ({ handpose }: Props) => {
           ) * scale;
         if (r < d) {
           d = r;
-        } else if (d < 0) {
-          d = 10; //三角形として体をなすように. calcTriangleCornerでのzero division error回避
         }
-
-        tmpLeftDistanceList.push(d);
+        leftDistanceListRaw.push(d);
       }
 
-      //validate
-      const l1 =
-        Math.max(tmpLeftDistanceList[0], tmpLeftDistanceList[1]) +
-        Math.min(tmpLeftDistanceList[0], tmpLeftDistanceList[1]) / 2;
-      const l2 =
-        Math.max(tmpLeftDistanceList[3], tmpLeftDistanceList[4]) +
-        Math.min(tmpLeftDistanceList[3], tmpLeftDistanceList[4]) / 2;
-
-      const edgeList = [l1, l2, tmpLeftDistanceList[2]];
-
-      if (isValidTriangle(edgeList)) {
-        leftDistanceListRaw = tmpLeftDistanceList;
-      }
       //update leftDistanceListHistory:
       leftDistanceListHistory.push(leftDistanceListRaw);
       if (leftDistanceListHistory.length > 5) {
@@ -130,35 +113,73 @@ export const HandSketch = ({ handpose }: Props) => {
       }
 
       leftDistanceList = getSmoothedValue(leftDistanceListHistory, 5);
+      //ログの出力に使用
       distanceListHistory.push(leftDistanceList);
-      if (distanceListHistory.length > 300) {
-        console.log(JSON.stringify(distanceListHistory));
-        distanceListHistory = [];
+      // if (distanceListHistory.length > 300) {
+      //   console.log(JSON.stringify(distanceListHistory));
+      //   distanceListHistory = [];
+      // }
+
+      const maxDist: { value: number; id: number } = { value: 0, id: 0 };
+
+      for (let i = 0; i < 5; i++) {
+        if (leftDistanceList[i] > maxDist.value) {
+          //代入されていくdistのうち最大のものを保存しておく
+          maxDist.value = leftDistanceList[i];
+          maxDist.id = i;
+        }
       }
 
-      L1 =
-        Math.max(leftDistanceList[0], leftDistanceList[1]) +
-        Math.min(leftDistanceList[0], leftDistanceList[1]) / 2;
-      L2 =
-        Math.max(leftDistanceList[3], leftDistanceList[4]) +
-        Math.min(leftDistanceList[3], leftDistanceList[4]) / 2;
+      for (let i = 0; i < 5; i++) {
+        if (leftDistanceList[i] < maxDist.value / 3) {
+          leftDistanceList[i] = maxDist.value / 3 + 0.01;
+        }
+      }
+
+      l1 =
+        (Math.max(
+          leftDistanceList[(maxDist.id + 3) % 5],
+          leftDistanceList[(maxDist.id + 4) % 5]
+        ) +
+          Math.min(
+            leftDistanceList[(maxDist.id + 3) % 5] +
+              leftDistanceList[(maxDist.id + 4) % 5],
+            leftDistanceList[(maxDist.id + 1) % 5] +
+              leftDistanceList[(maxDist.id + 2) % 5] +
+              maxDist.value
+          )) /
+        2;
+      l2 =
+        (Math.max(
+          leftDistanceList[(maxDist.id + 1) % 5],
+          leftDistanceList[(maxDist.id + 2) % 5]
+        ) +
+          Math.min(
+            leftDistanceList[(maxDist.id + 1) % 5] +
+              leftDistanceList[(maxDist.id + 2) % 5],
+            leftDistanceList[(maxDist.id + 3) % 5] +
+              leftDistanceList[(maxDist.id + 4) % 5] +
+              maxDist.value
+          )) /
+        2;
 
       cornerList = getPentagonCorner({
         distanceList: leftDistanceList,
-        l1: L1,
-        l2: L2,
+        l1,
+        l2,
+        maxDistId: maxDist.id,
       });
       p5.push();
       p5.noStroke();
       p5.translate(-p5.width / 2 + 10, -p5.height / 2 + 10);
-      for (let i = 0; i < leftDistanceList.length; i++) {
-        p5.translate(0, 20);
-        p5.text(leftDistanceList[i], 0, 0);
-        p5.push();
-        p5.translate(200, 0);
-        p5.text(cornerList[i], 0, 0);
-        p5.pop();
-      }
+      // for (let i = 0; i < leftDistanceList.length; i++) {
+      //   p5.translate(0, 20);
+      //   p5.text(leftDistanceList[i], 0, 0);
+      //   p5.push();
+      //   p5.translate(200, 0);
+      //   p5.text(cornerList[i], 0, 0);
+      //   p5.pop();
+      // }
       p5.pop();
 
       for (let i = 0; i < 5; i++) {
