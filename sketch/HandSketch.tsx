@@ -4,7 +4,6 @@ import { MutableRefObject } from "react";
 import { Hand } from "@tensorflow-models/hand-pose-detection";
 import { Keypoint } from "@tensorflow-models/hand-pose-detection";
 import { convertHandToHandpose } from "../lib/converter/convertHandToHandpose";
-import { isValidTriangle } from "../lib/isValidTriangle";
 import { getPentagonCorner } from "../lib/getPentagonCorner";
 import { getSmoothedValue } from "../lib/calculator/getSmoothedValue";
 import { getSmoothedHandpose } from "../lib/getSmoothedHandpose";
@@ -88,9 +87,6 @@ export const HandSketch = ({ handpose }: Props) => {
 
       p5.translate(window.innerWidth / 2, window.innerHeight / 2);
 
-      // p5.fill(220);
-      // p5.ellipse(0, 0, 80);
-
       const leftDistanceListRaw = [];
       for (let n = 0; n < 5; n++) {
         start = 4 * n + 1;
@@ -172,14 +168,20 @@ export const HandSketch = ({ handpose }: Props) => {
       p5.push();
       p5.noStroke();
       p5.translate(-p5.width / 2 + 10, -p5.height / 2 + 10);
-      // for (let i = 0; i < leftDistanceList.length; i++) {
-      //   p5.translate(0, 20);
-      //   p5.text(leftDistanceList[i], 0, 0);
-      //   p5.push();
-      //   p5.translate(200, 0);
-      //   p5.text(cornerList[i], 0, 0);
-      //   p5.pop();
-      // }
+
+      const distList: { name: string; value: number }[] = [];
+      for (let i = 0; i < 5; i++) {
+        distList.push({ name: fingerNames[i], value: leftDistanceList[i] });
+      }
+      distList.sort((a, b) => b.value - a.value);
+      for (let i = 0; i < leftDistanceList.length; i++) {
+        p5.translate(0, 20);
+        p5.text(distList[i].name, 0, 0);
+        p5.push();
+        p5.translate(200, 0);
+        p5.text(cornerList[i], 0, 0);
+        p5.pop();
+      }
       p5.pop();
 
       for (let i = 0; i < 5; i++) {
